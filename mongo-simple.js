@@ -2,10 +2,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { z } = require('zod');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+//nivel de seguridad
+const SALT_ROUNDS = 10
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const PORT = process.env.PORT || 3000;
 
@@ -37,6 +45,24 @@ const actividadEsquema = new mongoose.Schema({
     }]
 })
 
+//Esquemas de validacion
+const RegistroSchema = z.object({
+    nombre: z.string().min(2,"Nombre demasiado corto"),
+    apellidos: z.string().min(2,"Apellidos obligatorios"),
+    email: z.string().email("Email inválido"),
+    clave: z.string().min(6, "La clave debe tener al menos 6 caracteres"),
+    clave2: z.string()
+}).refine((data) => data.clave === data.clave2, {
+    message: "Las contraseñas no coinciden",
+    path: ["clave2"],
+});
+
+const LoginSchema = z.object({
+    email: z.string().email(),
+    clave: z.string()
+});
+
+
 const Usuario = mongoose.model("Usuario", usuarioEsquema);
 const Actividades = mongoose.model("Actividades",actividadEsquema);
 
@@ -46,11 +72,11 @@ async function connectarBd() {
         console.log("Iniciando conexión a MongoDB...");
         
         // Usamos la URI directamente o desde el env
-        const uri = process.env.MONGODB_URI || "mongodb+srv://admin_proyecto:PetConnect2026@cluster0.5vapmej.mongodb.net/";
+        const uri = process.env.MONGODB_URI;
 
         await mongoose.connect(uri, {
             serverSelectionTimeoutMS: 8000,
-            family: 4, // Fuerza IPv4 para evitar el error anterior
+            family: 4,
         });
 
         console.log("¡Conectado a MongoDB con éxito!");
@@ -62,57 +88,80 @@ async function connectarBd() {
 
 // Ruta de Login
 app.post("/api/login", async (req, res) => {
-    const { email, clave } = req.body;
     try {
+        // Validar con zod
+        const validacion = LoginSchema.safeParse(req.body);
+        if (!validacion.success) return res.status(400).json({ message: "Datos inválidos" });
+
+        const { email, clave } = validacion.data;
+
         const usuario = await Usuario.findOne({ email });
-        if (!usuario) {
-            return res.status(404).json({ message: "Usuario no encontrado" });
-        }
-        if (usuario.clave !== clave) {
-            return res.status(401).json({ message: "Contraseña incorrecta" });
-        }
-        
-        const { clave: _, ...usuarioSinClave } = usuario.toObject();
-        res.json(usuarioSinClave);
-    }
-    catch(error) {
-        console.log("Error al hacer login", error);
+        if (!usuario) return res.status(404).json({ message: "Usuario no encontrado" });
+
+        // BCRYPT,comparar contraseña enviada con el hash de la BD
+        const esValida = await bcrypt.compare(clave, usuario.clave);
+        if (!esValida) return res.status(401).json({ message: "Contraseña incorrecta" });
+
+        // JWT,generar Token
+        const token = jwt.sign(
+            { id: usuario._id, role: usuario.role },
+            JWT_SECRET,
+            { expiresIn: '2h' }
+        );
+
+        res.json({
+            token,
+            usuario: {
+                id: usuario._id,
+                nombre: usuario.nombre,
+                role: usuario.role
+            }
+        });
+    } catch(error) {
         res.status(500).json({ message: "Error del servidor" });
     }
 });
 
 app.post("/api/registro", async (req, res) => {
-    const { nombre, apellidos, email, clave, clave2 } = req.body;
-    
     try {
-        // 1. Comprobar si el correo ya existe en la base de datos
+        // Validar con zod
+        const validacion = RegistroSchema.safeParse(req.body);
+        if (!validacion.success) {
+            const erroresFormateados = validacion.error.format();
+            return res.status(400).json({ 
+                message: "Error de validación",
+                detalles: erroresFormateados 
+            });
+        }
+
+        const { nombre, apellidos, email, clave } = validacion.data;
+
         const existeUsuario = await Usuario.findOne({ email });
         if (existeUsuario) {
             return res.status(400).json({ message: "El correo ya está registrado" });
         }
-        if(clave === clave2){
-             // 2. Si no existe, crear el nuevo usuario
-            const nuevoUsuario = new Usuario({
-                nombre,
-                apellidos,
-                email,
-                clave // Nota: En un proyecto real aquí usaríamos bcrypt para encriptar
-            });
-            // 3. Guardar en MongoDB
-            await nuevoUsuario.save();
-            res.status(201).json({ message: "Usuario creado con éxito", usuario: nuevoUsuario });
-        }
-        else{
-            res.status(201).json({ message: "Las contraseñas no coinciden"});
-        }
+
+        //Hashear la contraseña
+        const passwordHash = await bcrypt.hash(clave, SALT_ROUNDS);
+
+        const nuevoUsuario = new Usuario({
+            nombre,
+            apellidos,
+            email,
+            clave: passwordHash // se guarda el hash
+        });
+
+        await nuevoUsuario.save();
+        res.status(201).json({ message: "Usuario creado con éxito" });
+
     } catch (error) {
-        console.error("Error al registrar:", error);
-        res.status(500).json({ message: "Error al guardar el usuario" });
+        console.error(error);
+        res.status(500).json({ message: "Error interno" });
     }
 });
 
 app.post("/api/actividades/inscribir", async(req,res)=>{
-    const { actividadId, usuarioId } = req.body;
+    const { actividadId, usuarioId, hora } = req.body;
     try{
         await Actividades.findByIdAndUpdate(actividadId,{
             $push: { personasApuntadas: { usuarioId, hora } }
@@ -131,7 +180,7 @@ app.post("/api/actividades/crear", async (req, res) => {
             nombre,
             descripcion,
             plazas,
-            fechaHora,
+            fechaHora: fecha || fechaHora,
             personasApuntadas: []
         });
         await nuevaActividad.save();
