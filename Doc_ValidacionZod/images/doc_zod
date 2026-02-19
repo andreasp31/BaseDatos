@@ -10,12 +10,12 @@ Se utiliza la librería Zod para realizar validaciones en tiempo de ejecución. 
 ### Esquema Registro:
 * **Nombre y apellidos:** mínimo 2 caracteres para que no haya campos vacíos.
 *  **Email:** tiene que contener un correo válido.
-*** Clave: tiene que tener mínimo 6 caracteres por ejemplo más por razones de seguridad.
-*** Y asegurar que clave y clave2 son iguales antes de realizar el registro.
+* **Clave:** tiene que tener mínimo 6 caracteres por ejemplo más por razones de seguridad.
+* Y asegurar que clave y clave2 son iguales antes de realizar el registro.
 
-** Esquema Login:
-*** Hay que tener en cuenta que el email tenga el formato válido antes de consultar si se encuentra en la base de datos.
-
+## Esquema Login:
+* Hay que tener en cuenta que el email tenga el formato válido antes de consultar si se encuentra en la base de datos.
+ 
 ## 3: Validación de datos en Servidor
 Para ello la validación se ejecuta mediante el médoto `.safeParse()`, que permite manejar los errores si detener el servidor.
 ** Endpoint de registro: le añadimos lo siguiente que comprueba que si hay errores devolverá un mensaje de error, y desde la vista sea de escritorio como de móvil hay que pasársela.
