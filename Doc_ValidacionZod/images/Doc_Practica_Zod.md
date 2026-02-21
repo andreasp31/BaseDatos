@@ -78,7 +78,11 @@ Y en el tamplate hay un `p` que va a enseñar el mensaje de error:
 <p v-if="errorMensaje" class="mensajError">{{ errorMensaje }}</p>
 ```
 Ejemplo visual de ver el error al equivocarme en un campo del formulario: 
-![Previsualización Validacion](./images/validacionZod.png)
+![Previsualización Validacion2](./images/validacionZod.png)
+
+Ejemplo visual de como sería validando el intento de inición de sesión:
+
+![Previsualización Validacion](./images/validacionZod2.png)
 
 ## 5. Gestión de Errores en el Frontend de la app Móvil(React Native)
 La base es la misma, lo único que cambia es como reflejar esos datos de error en el front de la app móvil.
